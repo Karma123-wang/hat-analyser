@@ -2,7 +2,7 @@
 
 Analyses the HAT questionnaire workbook (sheets `pre-test` and `post-test`).
 
-Tabs: Summary (pre vs post), Pre-test, Post-test, Student progress (matched by name, paired t-test + Wilcoxon), Download (Excel/CSV).
+Tabs: Summary (pre vs post), Pre-test, Post-test, Student progress, Download report (editable PDF, PowerPoint with native charts, interactive Excel).
 
 ## Run locally
     pip install -r requirements.txt

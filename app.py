@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import analysis as A
+import reports as R
 
 st.set_page_config(page_title="HAT Pre/Post Test Analyser", page_icon="📊", layout="wide")
 
@@ -122,7 +123,7 @@ def single_test_tab(df, name):
 
 # ---------------------------------------------------------------- tabs
 tab_sum, tab_pre, tab_post, tab_stu, tab_dl = st.tabs(
-    ["📈 Summary (Pre vs Post)", "📝 Pre-test", "✅ Post-test", "👥 Student progress", "⬇️ Download"])
+    ["📈 Summary (Pre vs Post)", "📝 Pre-test", "✅ Post-test", "👥 Student progress", "⬇️ Download report"])
 
 comp = A.comparison_table(pre, post, qsel)
 matched, un_pre, un_post = A.paired_scores(pre, post, list(qsel["Question"]))
@@ -244,18 +245,63 @@ with tab_stu:
             st.write("Only in post-test:", un_post or "—")
 
 with tab_dl:
-    st.subheader("Download analysis as Excel")
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
-        pd.DataFrame({"Summary": [A.summary_note(comp, len(pre), len(post))]}).to_excel(xw, sheet_name="Summary note", index=False)
-        table.to_excel(xw, sheet_name="Summary table", index=False)
-        A.theme_table(comp).to_excel(xw, sheet_name="By theme", index=False)
-        pre_tbl.to_excel(xw, sheet_name="Pre-test analysis", index=False)
-        post_tbl.to_excel(xw, sheet_name="Post-test analysis", index=False)
-        if not matched.empty:
-            matched.to_excel(xw, sheet_name="Student progress", index=False)
-    st.download_button("⬇️ Download Excel report", buf.getvalue(),
-                       file_name="HAT_pre_post_analysis.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    st.download_button("⬇️ Download summary table (CSV)", table.to_csv(index=False).encode(),
+    st.subheader("Download report — Word, PDF, PowerPoint or interactive Excel")
+    st.caption("Edit the text below, choose the sections, then generate. The report uses the current sidebar "
+               "filters (gender, class, theme).")
+    bundle = R.build_bundle(pre, post, qsel)
+    d = R.default_options(bundle["note"])
+
+    with st.form("report_form"):
+        c1, c2 = st.columns(2)
+        title = c1.text_input("Report title", d["title"])
+        subtitle = c2.text_input("Subtitle", d["subtitle"])
+        organisation = c1.text_input("School / organisation", "Damphu Central School")
+        prepared_by = c2.text_input("Prepared by", "QA Unit, Tsirang Hospital")
+        report_date = c1.text_input("Date", d["report_date"])
+        intro = st.text_area("Introduction (optional)", "", height=90,
+                             placeholder="e.g. background of the Health Awareness Training, dates, facilitators…")
+        findings = st.text_area("Key findings (auto-written — edit freely)", d["findings"], height=130)
+        recs = st.text_area("Recommendations (optional, one per line)", "", height=110)
+        sections = st.multiselect("Sections to include", list(R.SECTIONS), default=list(R.SECTIONS),
+                                  format_func=R.SECTIONS.get)
+        show_names = st.checkbox("Include student names (otherwise shown as Student 1, 2, …)", value=False)
+        submitted = st.form_submit_button("🛠️ Generate reports", type="primary")
+
+    if submitted:
+        opts = dict(title=title, subtitle=subtitle, organisation=organisation, prepared_by=prepared_by,
+                    report_date=report_date, intro=intro, findings=findings, recommendations=recs,
+                    sections=sections, show_names=show_names)
+        with st.spinner("Building Word, PDF, PowerPoint and Excel…"):
+            st.session_state["reports"] = {
+                "docx": R.build_docx(bundle, opts),
+                "pdf": R.build_pdf(bundle, opts),
+                "pptx": R.build_pptx(bundle, opts),
+                "xlsx": R.build_excel(bundle, opts),
+            }
+        st.session_state["report_name"] = (title or "HAT_report").replace(" ", "_")
+
+    rep = st.session_state.get("reports")
+    if rep:
+        st.success("Reports ready — download below.")
+        name = st.session_state.get("report_name", "HAT_report")
+        c0, c1, c2, c3 = st.columns(4)
+        c0.download_button("📝 Download Word", rep["docx"], f"{name}.docx",
+                           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                           use_container_width=True)
+        c1.download_button("📄 Download PDF", rep["pdf"], f"{name}.pdf", "application/pdf",
+                           use_container_width=True)
+        c2.download_button("📊 Download PowerPoint", rep["pptx"], f"{name}.pptx",
+                           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                           use_container_width=True)
+        c3.download_button("📗 Download Excel (interactive)", rep["xlsx"], f"{name}.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True)
+        st.caption("Word: Times New Roman 12 pt body, bold headings — fully editable. "
+                   "PowerPoint charts are native — click a chart → Edit Data to change values, colours or labels. "
+                   "In Excel, change any answer on the 'Pre-test data' / 'Post-test data' sheets (drop-down) and "
+                   "the Summary, KPI tiles and all charts update automatically.")
+    else:
+        st.info("Fill in the form and click **Generate reports**.")
+
+    st.download_button("⬇️ Summary table only (CSV)", table.to_csv(index=False).encode(),
                        file_name="HAT_summary.csv", mime="text/csv")
